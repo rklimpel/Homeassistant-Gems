@@ -1,0 +1,94 @@
+alias: Play Spotify playlist on Sonos group
+fields:
+  sonos_speakers:
+    name: Sonos speakers
+    description: A list of entity_ids of the speakers to be grouped.
+    example: "[media_player.living_room_sonos, media_player.kitchen_sonos]"
+    selector:
+      target:
+        entity:
+          domain: media_player
+  spotify_playlist:
+    name: Spotify playlist ID
+    description: Only the raw Spotify playlist ID (e.g., 37i9dQZF1DXc...).
+    example: 37i9dQZF1DXcBWIGoYBM5M
+    selector:
+      text: null
+  volume:
+    name: Volume
+    description: The desired volume (0.0 to 1.0).
+    default: 0.2
+    selector:
+      number:
+        min: 0
+        max: 1
+        step: 0.05
+        mode: slider
+  shuffle_enabled:
+    name: Shuffle
+    description: Defines whether the playlist should be played in random order.
+    default: true
+    selector:
+      boolean: null
+sequence:
+  - variables:
+      temp_speakers: >
+        {% set result = sonos_speakers.entity_id | default(sonos_speakers) %}
+        {% if result is string and result is not none %}
+          {# If only a single entity_id string is passed, wrap it in a list. #}
+          {{ [result] }}
+        {% else %}
+          {# Otherwise use the result directly (list or None/object). #}
+          {{ result }}
+        {% endif %}
+      speaker_list: "{{ temp_speakers | default([]) | list }}"
+      master_speaker: "{{ speaker_list[0] | default(none) }}"
+      grouped_speakers: "{{ speaker_list[1:] | default([]) }}"
+
+  - condition: template
+    value_template: "{{ master_speaker is not none }}"
+
+  - target:
+      entity_id: "{{ speaker_list }}"
+    action: media_player.unjoin
+
+  - delay: "00:00:01"
+
+  - target:
+      entity_id: "{{ speaker_list }}"
+    action: media_player.media_stop
+
+  - target:
+      entity_id: "{{ speaker_list }}"
+    action: media_player.clear_playlist
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ grouped_speakers | count > 0 }}"
+        sequence:
+          - data:
+              master: "{{ master_speaker }}"
+              entity_id: "{{ grouped_speakers }}"
+            action: media_player.join
+
+  - target:
+      entity_id: "{{ master_speaker }}"
+    data:
+      volume_level: "{{ volume }}"
+    action: media_player.volume_set
+
+  - target:
+      entity_id: "{{ master_speaker }}"
+    data:
+      shuffle: "{{ shuffle_enabled }}"
+    action: media_player.shuffle_set
+
+  - target:
+      entity_id: "{{ master_speaker }}"
+    data:
+      media:
+        media_content_id: spotify:playlist:{{ spotify_playlist }}
+        media_content_type: playlist
+        metadata: {}
+    action: media_player.play_media

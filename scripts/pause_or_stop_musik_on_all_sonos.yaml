@@ -1,0 +1,55 @@
+alias: Stop or pause music on selected Sonos
+fields:
+  sonos_speakers:
+    name: Target Sonos speakers
+    description: A list of entity_ids of the speakers to control.
+    example: "[media_player.living_room_sonos, media_player.kitchen_sonos]"
+    selector:
+      target:
+        entity:
+          domain: media_player
+  force_stop:
+    name: Completely stop music & reset
+    description: >-
+      If enabled (true), groups will be unjoined and playlists cleared
+      (full reset). If disabled, playback will only be paused.
+    default: false
+    selector:
+      boolean: null
+sequence:
+  - variables:
+      temp_speakers: >
+        {% set result = sonos_speakers.entity_id | default(sonos_speakers) %}
+        {% if result is string and result is not none %}
+          {# If only a single entity_id string is passed, wrap it in a list. #}
+          {{ [result] }}
+        {% else %}
+          {# Otherwise use the result directly. #}
+          {{ result }}
+        {% endif %}
+      speaker_list: "{{ temp_speakers | default([]) | list }}"
+
+  - condition: template
+    value_template: "{{ speaker_list | count > 0 }}"
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ force_stop == true }}"
+        sequence:
+          - target:
+              entity_id: "{{ speaker_list }}"
+            action: media_player.media_stop
+          - target:
+              entity_id: "{{ speaker_list }}"
+            action: media_player.clear_playlist
+          - target:
+              entity_id: "{{ speaker_list }}"
+            action: media_player.unjoin
+      - conditions:
+          - condition: template
+            value_template: "{{ force_stop == false }}"
+        sequence:
+          - target:
+              entity_id: "{{ speaker_list }}"
+            action: media_player.media_pause

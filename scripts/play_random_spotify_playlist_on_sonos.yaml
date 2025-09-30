@@ -1,0 +1,79 @@
+alias: Start random Spotify playlist on Sonos
+fields:
+  sonos_speakers:
+    name: Sonos speakers
+    description: >-
+      The list of speakers to be grouped. The first speaker will be used
+      as the master.
+    selector:
+      target:
+        entity:
+          domain: media_player
+  playlist_urls:
+    name: Spotify playlist IDs
+    description: >-
+      A list of Spotify playlist IDs (one per line or separated by spaces).
+    example: >-
+      2YWrxtiZo6ZVoSgjEEYwNZ 0ArpHVgUYX3nnUVQjc3hia 0tEfYFUcIrEMpgp8Axitfe
+    selector:
+      text:
+        multiline: true
+  volume:
+    name: Volume
+    description: Desired volume (0.0 to 1.0).
+    default: 0.2
+    selector:
+      number:
+        min: 0
+        max: 1
+        step: 0.05
+        mode: slider
+  shuffle_enabled:
+    name: Shuffle
+    description: Defines whether the playlist should be played in random order.
+    default: true
+    selector:
+      boolean: null
+sequence:
+  # Step 1: Define master speaker, based on the first entry in the target object
+  - variables:
+      master_speaker: >
+        {% set speakers = sonos_speakers.entity_id | default([]) %}
+        {{ speakers[0] if speakers | length > 0 else none }}
+
+  # Step 2: Ensure at least one speaker has been selected
+  - condition: template
+    value_template: "{{ master_speaker is not none }}"
+
+  - data:
+      message: "DEBUG4 - Spotify playlist input: {{ playlist_urls }}"
+      level: warning
+    action: system_log.write
+
+  # Step 3: Extract playlist IDs from input and select one at random
+  - variables:
+      random_playlist_data: >
+        {% set normalized_input = playlist_urls | default('') | replace('\r',' ') | replace('\n',' ') %}
+        {% set id_list = normalized_input.split() %}
+        {% set random_id = id_list | random if id_list | length > 0 else none %}
+        {{ {'ids': id_list, 'random_id': random_id} }}
+  
+      playlist_ids: "{{ random_playlist_data.ids }}"
+      random_playlist_id: "{{ random_playlist_data.random_id }}"
+
+  - data:
+      message: "DEBUG4 - Spotify playlist script: Extracted IDs: {{ playlist_ids }}. Random ID: {{ random_playlist_id }}"
+      level: warning
+    action: system_log.write
+
+  # Step 4: Ensure that a valid playlist ID has been found
+  - condition: template
+    value_template: "{{ random_playlist_id is not none }}"
+
+  # Step 5: Call sub-script with the determined values
+  - service: script.play_spotify_playlist_on_sonos
+    data:
+      sonos_speakers: "{{ sonos_speakers }}"
+      spotify_playlist: "{{ random_playlist_id }}"
+      volume: "{{ volume }}"
+      shuffle_enabled: "{{ shuffle_enabled }}"
